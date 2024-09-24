@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "esnext"
+    ],
+    "declarationDir": "./dist/types",
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",
+    "outDir": "./dist", // Output directory
+    "rootDir": "./src", // Source files directory
+    "baseUrl": ".",
+    "module": "commonjs", // Module system (for Node.js compatibility)
+    "target": "ES6", // Output ES6 for modern JavaScript
+    "declaration": true, // Generate .d.ts declaration files for TypeScript types
+    "strict": true, // Enable strict type-checking options
+    "esModuleInterop": true, // Enable import/export compatibility
+    "skipLibCheck": true, // Skip type checking of declaration files
+    "sourceMap": true
+  },
+  "include": [
+    "src/**/*"
+  ], // Include all .ts files in the src/ directory
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.test.ts"
+  ] // Exclude test files and node_modules
+}
