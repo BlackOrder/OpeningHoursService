@@ -32,6 +32,10 @@ export interface NextChange {
     date: Date;
     state: 'open' | 'close';
 }
+export interface OpeningHoursInstance {
+    getState(date: Date): boolean;
+    getNextChange(date: Date): Date | undefined;
+}
 /**
  * A service class for managing opening hours for a business.
  * Handles adding, removing, querying, and validating opening hours, along with timezone conversion.
@@ -39,7 +43,6 @@ export interface NextChange {
 export declare class OpeningHoursService {
     private openingHours;
     private userTimezone;
-    private inputTimezone;
     private openingHoursInstance;
     /**
      * Initializes the OpeningHoursService.
@@ -62,12 +65,12 @@ export declare class OpeningHoursService {
      * Exports the current opening hours data, converting it to a specified timezone.
      * Handles splitting entries if the conversion causes day changes.
      *
-     * @param {string} [timezone=this.userTimezone] - The timezone to export the data in.
+     * @param {string} [timezone=this.userTimezone] - The timezone of the exported data (default is the user's timezone).
      * @returns {OpeningHoursSpecification[]} - Array of opening hours in the specified timezone.
      */
     exportOpeningHours(timezone?: string): OpeningHoursSpecification[];
     /**
-     * Checks if the establishment is currently open in the specified timezone.
+     * Checks if the establishment is currently open based on the current time.
      *
      * @returns {boolean} - True if the establishment is open, false otherwise.
      */
@@ -79,21 +82,81 @@ export declare class OpeningHoursService {
      */
     isClosedNow(): boolean;
     /**
-     * Checks if the establishment is open at a specific date and time in the specified timezone.
+     * Checks if the establishment is always open.
+     *
+     * @returns {boolean} - True if the establishment is always open, false otherwise.
+     */
+    isAlwaysOpen(): boolean;
+    /**
+     * Checks if the establishment is always closed.
+     *
+     * @returns {boolean} - True if the establishment is always closed, false otherwise.
+     */
+    isAlwaysClosed(): boolean;
+    /**
+     * Checks if the establishment is open at a specific date and time.
      *
      * @param {Date} date - The specific date and time to check.
-     * @param {string} [timezone=this.userTimezone] - The timezone for the check (default is the user's timezone).
      * @returns {boolean} - True if the establishment is open, false otherwise.
      */
-    isOpenAt(date: Date, timezone?: string): boolean;
+    isOpenAt(date: Date): boolean;
+    /**
+     * Checks if the establishment is closed at a specific date and time.
+     *
+     * @param {Date} date - The specific date and time to check.
+     * @returns {boolean} - True if the establishment is closed, false otherwise.
+     */
+    isClosedAt(date: Date): boolean;
+    getOpeningHoursInstance(): OpeningHoursInstance;
+    /**
+     * Checks if the business will remain open for the specified duration from the current time.
+     *
+     * @param {number} durationInMinutes - The duration to check in minutes.
+     * @param {Date} [date=new Date()] - The reference date and time to check from.
+     * @returns {boolean} - True if the business will remain open for the specified duration, false otherwise.
+     */
+    isOpenForDuration(durationInMinutes: number, date?: Date): boolean;
+    /**
+     * Checks if the business will remain closed for the specified duration from the current time.
+     *
+     * @param {number} durationInMinutes - The duration to check in minutes.
+     * @param {Date} [date=new Date()] - The reference date and time to check from.
+     * @returns {boolean} - True if the business will remain closed for the specified duration, false otherwise.
+     */
+    isClosedForDuration(durationInMinutes: number, date?: Date): boolean;
+    /**
+     * Gets the number of minutes the business will remain open from the specified date and time.
+     *
+     * @param {Date} [date=new Date()] - The reference date and time to check from.
+     * @returns {number} - The number of minutes until the next opening time.
+     */
+    openMinutesWindow(date?: Date): number;
+    /**
+     * Gets the number of minutes the business will remain closed from the specified date and time.
+     *
+     * @param {Date} [date=new Date()] - The reference date and time to check from.
+     * @returns {number} - The number of minutes until the next closing time.
+     */
+    closeMinutesWindow(date?: Date): number;
     /**
      * Retrieves the next change in the opening hours (either opening or closing).
      *
      * @param {Date} [date=new Date()] - The reference date and time to check from.
-     * @param {string} [timezone=this.userTimezone] - The timezone of the reference date (default is user's timezone).
      * @returns {NextChange | null} - The next change in opening hours or null if none exists.
      */
-    getNextChange(date?: Date, timezone?: string): NextChange | null;
+    getNextChange(date?: Date): NextChange | null;
+    /**
+     * Returns the next opening time from the current time.
+     *
+     * @returns {Date | null} - The next opening time, or null if no upcoming openings.
+     */
+    getNextOpeningTime(): Date | null;
+    /**
+     * Returns the next closing time from the current time.
+     *
+     * @returns {Date | null} - The next closing time, or null if no upcoming closings.
+     */
+    getNextClosingTime(): Date | null;
     /**
      * Adds a new single-day opening hour entry.
      * Converts times to the user's timezone and ensures data integrity before adding the entry.
@@ -102,7 +165,7 @@ export declare class OpeningHoursService {
      * @param {string} dayOfWeek - The day of the week (e.g., "Monday").
      * @param {string} opens - Opening time in HH:mm format.
      * @param {string} closes - Closing time in HH:mm format.
-     * @param {string} [timezone=this.userTimezone] - The timezone of the input data.
+     * @param {string} [timezone=this.userTimezone] - The timezone of the input data (default is the user's timezone).
      */
     addOpeningHour(dayOfWeek: string, opens: string, closes: string, timezone?: string): void;
     /**
@@ -111,46 +174,31 @@ export declare class OpeningHoursService {
      * Handles splitting if the entries span across days due to timezone conversion.
      *
      * @param {OpeningHoursSpecification[]} openingHours // The opening hours to add
-     * @param {string} [timezone=this.userTimezone] // The timezone of the input data
+     * @param {string} [timezone=this.userTimezone] // The timezone of the input data (default is the user's timezone).
      */
     addOpeningHoursBatch(openingHours: OpeningHoursSpecification[], timezone?: string): void;
     /**
      * Removes all opening hours for a specific day of the week, considering the timezone.
      *
      * @param {string} dayOfWeek - The day of the week to remove (e.g., "Monday").
-     * @param {string} [timezone=this.userTimezone] - The timezone in which to interpret the day of the week.
+     * @param {string} [timezone=this.userTimezone] - The timezone in which to interpret the day of the week (default is the user's timezone).
      */
     removeOpeningHoursForDay(dayOfWeek: string, timezone?: string): void;
     /**
-     * Set the user's timezone and converts all stored opening hours to the new timezone.
-     * Handles splitting if the conversion causes day changes.
-     *
-     * @param {string} timezone - The new timezone to switch to.
-     */
-    setUserTimezone(timezone: string): void;
-    /**
-     * Returns the user's timezone.
-     *
-     * @returns {string} - The user's timezone.
-     */
-    getUsertimezone(): string;
-    /**
      * Returns an array with openRange for each day of the week, including the opening and closing times, with optional timezone conversion.
-     * Combines adjacent time ranges and checks for integrity in the specified timezone.
      *
-     * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange.
+     * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange because the days of the week are in the user's timezone (default is the user's timezone).
      * @returns {OpenRangePerDay[]} - Array of objects where each object contains the day of the week and its openRange.
      */
     getOpenRangePerDay(timezone?: string): OpenRangePerDay[];
     /**
-     * Returns the openRange for a single day, with optional timezone conversion.
-     * Combines adjacent time ranges and checks for integrity in the specified timezone.
+     * Returns the openRange for a single day, including the opening and closing times, with optional timezone conversion.
      *
      * @param {string} dayOfWeek - The day of the week to retrieve the openRange for (e.g., "Monday").
-     * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange.
+     * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange because the days of the week are in the user's timezone (default is the user's timezone).
      * @returns {OpenRangePerDay} - Object containing the day of the week and its openRange.
      */
-    getShiftsForDay(dayOfWeek: string, timezone?: string): OpenRangePerDay;
+    getOpenRangeForDay(dayOfWeek: string, timezone?: string): OpenRangePerDay;
     /**
      * Validates the integrity of the current opening hours stored in the service.
      * Ensures that opening and closing times are valid, and there are no overlaps or invalid entries.
@@ -165,25 +213,6 @@ export declare class OpeningHoursService {
      * @returns {number} - Total number of open hours.
      */
     getTotalOpenHours(): number;
-    /**
-     * Returns the next opening time from the current time.
-     *
-     * @returns {Date | null} - The next opening time, or null if no upcoming openings.
-     */
-    getNextOpeningTime(): Date | null;
-    /**
-     * Returns the next closing time from the current time.
-     *
-     * @returns {Date | null} - The next closing time, or null if no upcoming closings.
-     */
-    getNextClosingTime(): Date | null;
-    /**
-     * Checks if the business will remain open for the specified duration from the current time.
-     *
-     * @param {number} durationInMinutes - The duration to check in minutes.
-     * @returns {boolean} - True if the business will remain open for the specified duration, false otherwise.
-     */
-    isOpenForDuration(durationInMinutes: number): boolean;
     /**
      * Returns an array of days that have no opening hours set.
      *
@@ -207,15 +236,6 @@ export declare class OpeningHoursService {
      * @returns {OpeningHoursSpecification[]} - Array of converted and possibly split entries.
      */
     private convertAndSplitEntry;
-    /**
-     * Adjusts the day of the week for a given timezone conversion.
-     *
-     * @param {string} dayOfWeek - The original day of the week.
-     * @param {string} fromTimezone - The original timezone.
-     * @param {string} toTimezone - The target timezone.
-     * @returns {string} - The adjusted day of the week.
-     */
-    private adjustDayForTimezone;
     /**
      * Converts a time from one timezone to another, accounting for day changes.
      *
@@ -257,15 +277,6 @@ export declare class OpeningHoursService {
      * @param {OpeningHoursSpecification[]} hours - Array of opening hours to validate.
      */
     private checkIntegrity;
-    /**
-     * Converts a given time (in "HH:mm" format) to the zoned date with the specified time,
-     * adjusted for the given timezone.
-     *
-     * @param {string} time - Time in HH:mm format (e.g., "14:30").
-     * @param {string} dayOfWeek - The day of the week for the time (e.g., "Monday").
-     * @returns {Date} - The date object with the specified time and day, adjusted for the timezone.
-     */
-    private convertToZonedDate;
     /**
      * Converts a time string (HH:mm) to the number of minutes since the start of the day.
      *
@@ -324,29 +335,6 @@ export declare class OpeningHoursService {
      * @returns {string} - The short form of the day (e.g., "Mo").
      */
     private convertDayOfWeekToShortForm;
-    /**
-     * Converts a date object to the specified timezone.
-     *
-     * @param {Date} date - The date object to convert.
-     * @param {string} timezone - The timezone to convert to.
-     * @returns {Date} - The converted date.
-     */
-    private convertDateToTimezone;
-    /**
-     * Converts a date object from the specified timezone to the local timezone.
-     *
-     * @param {Date} date - The date object to convert.
-     * @param {string} timezone - The timezone of the input date.
-     * @returns {Date} - The converted date.
-     */
-    private convertDateFromTimezone;
-    /**
-     * Gets the current time in the specified timezone.
-     *
-     * @param {string} timezone - The timezone for the current time.
-     * @returns {Date} - The current time in the specified timezone.
-     */
-    private getCurrentTimeInTimezone;
     /**
      * Compares two opening hours entries by day and time.
      * Used to sort opening hours for processing.

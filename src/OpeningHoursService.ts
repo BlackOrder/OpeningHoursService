@@ -34,8 +34,14 @@ export type OpenRangePerDay = {
  * Interface representing the next change in opening hours.
  */
 export interface NextChange {
-  date: Date; // The date and time of the next change
-  state: 'open' | 'close'; // The state after the change
+  date: Date // The date and time of the next change
+  state: 'open' | 'close' // The state after the change
+}
+
+export interface OpeningHoursInstance {
+  getState(date: Date): boolean
+  getNextChange(date: Date): Date | undefined
+  // Add other methods as needed
 }
 
 /**
@@ -45,8 +51,9 @@ export interface NextChange {
 export class OpeningHoursService {
   private openingHours: OpeningHoursSpecification[] = []
   private userTimezone: string // Timezone of the user (default is the user's local timezone)
-  private inputTimezone: string // Timezone of the input data
-  private openingHoursInstance: any = new opening_hours('Mo-Su closed') // Default: closed all days
+  private openingHoursInstance: OpeningHoursInstance = new opening_hours(
+    'Mo-Su closed'
+  ) as OpeningHoursInstance // Default: closed all days
 
   /**
    * Initializes the OpeningHoursService.
@@ -58,9 +65,9 @@ export class OpeningHoursService {
   constructor (initialHours?: OpeningHoursSpecification[], timezone?: string) {
     // Default to the user's local timezone if none is provided
     this.userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
-    this.inputTimezone = timezone || this.userTimezone
+    const inputTimezone = timezone || this.userTimezone
     if (initialHours && initialHours.length > 0) {
-      this.setOpeningHours(initialHours, this.inputTimezone)
+      this.setOpeningHours(initialHours, inputTimezone)
     }
   }
 
@@ -99,7 +106,7 @@ export class OpeningHoursService {
    * Exports the current opening hours data, converting it to a specified timezone.
    * Handles splitting entries if the conversion causes day changes.
    *
-   * @param {string} [timezone=this.userTimezone] - The timezone to export the data in.
+   * @param {string} [timezone=this.userTimezone] - The timezone of the exported data (default is the user's timezone).
    * @returns {OpeningHoursSpecification[]} - Array of opening hours in the specified timezone.
    */
   exportOpeningHours (
@@ -117,12 +124,12 @@ export class OpeningHoursService {
   }
 
   /**
-   * Checks if the establishment is currently open in the specified timezone.
+   * Checks if the establishment is currently open based on the current time.
    *
    * @returns {boolean} - True if the establishment is open, false otherwise.
    */
   isOpenNow (): boolean {
-    const localNow = this.getCurrentTimeInTimezone(this.userTimezone)
+    const localNow = new Date()
     return this.openingHoursInstance.getState(localNow)
   }
 
@@ -136,53 +143,168 @@ export class OpeningHoursService {
   }
 
   /**
-   * Checks if the establishment is open at a specific date and time in the specified timezone.
+   * Checks if the establishment is always open.
+   *
+   * @returns {boolean} - True if the establishment is always open, false otherwise.
+   */
+  isAlwaysOpen (): boolean {
+    return this.isOpenNow() && this.getNextChange() === null
+  }
+
+  /**
+   * Checks if the establishment is always closed.
+   *
+   * @returns {boolean} - True if the establishment is always closed, false otherwise.
+   */
+  isAlwaysClosed (): boolean {
+    return this.isClosedNow() && this.getNextChange() === null
+  }
+
+  /**
+   * Checks if the establishment is open at a specific date and time.
    *
    * @param {Date} date - The specific date and time to check.
-   * @param {string} [timezone=this.userTimezone] - The timezone for the check (default is the user's timezone).
    * @returns {boolean} - True if the establishment is open, false otherwise.
    */
-  isOpenAt (date: Date, timezone: string = this.userTimezone): boolean {
-    const localTime = this.convertDateFromTimezone(date, timezone)
-    return this.openingHoursInstance.getState(localTime)
+  isOpenAt (date: Date): boolean {
+    return this.openingHoursInstance.getState(date)
+  }
+
+  /**
+   * Checks if the establishment is closed at a specific date and time.
+   *
+   * @param {Date} date - The specific date and time to check.
+   * @returns {boolean} - True if the establishment is closed, false otherwise.
+   */
+  isClosedAt (date: Date): boolean {
+    return !this.isOpenAt(date)
+  }
+
+  getOpeningHoursInstance (): OpeningHoursInstance {
+    return this.openingHoursInstance
+  }
+
+  /**
+   * Checks if the business will remain open for the specified duration from the current time.
+   *
+   * @param {number} durationInMinutes - The duration to check in minutes.
+   * @param {Date} [date=new Date()] - The reference date and time to check from.
+   * @returns {boolean} - True if the business will remain open for the specified duration, false otherwise.
+   */
+  isOpenForDuration (
+    durationInMinutes: number,
+    date: Date = new Date()
+  ): boolean {
+    const openWindow = this.openMinutesWindow(date)
+    return openWindow >= durationInMinutes
+  }
+
+  /**
+   * Checks if the business will remain closed for the specified duration from the current time.
+   *
+   * @param {number} durationInMinutes - The duration to check in minutes.
+   * @param {Date} [date=new Date()] - The reference date and time to check from.
+   * @returns {boolean} - True if the business will remain closed for the specified duration, false otherwise.
+   */
+  isClosedForDuration (
+    durationInMinutes: number,
+    date: Date = new Date()
+  ): boolean {
+    const closeWindow = this.closeMinutesWindow(date)
+    return closeWindow >= durationInMinutes
+  }
+
+  /**
+   * Gets the number of minutes the business will remain open from the specified date and time.
+   *
+   * @param {Date} [date=new Date()] - The reference date and time to check from.
+   * @returns {number} - The number of minutes until the next opening time.
+   */
+  openMinutesWindow (date: Date = new Date()): number {
+    const maxTime = 7 * 24 * 60
+
+    if (this.isClosedAt(date)) return 0
+
+    let nextChange = this.getNextChange(date)
+    if (!nextChange || this.isAlwaysOpen()) return maxTime
+
+    const nextChangeDate = nextChange.date
+    const now = date
+    const timeUntilNextChange = nextChangeDate.getTime() - now.getTime()
+
+    return Math.floor(timeUntilNextChange / (60 * 1000))
+  }
+
+  /**
+   * Gets the number of minutes the business will remain closed from the specified date and time.
+   *
+   * @param {Date} [date=new Date()] - The reference date and time to check from.
+   * @returns {number} - The number of minutes until the next closing time.
+   */
+  closeMinutesWindow (date: Date = new Date()): number {
+    const maxTime = 7 * 24 * 60
+
+    if (this.isOpenAt(date)) return 0
+
+    let nextChange = this.getNextChange(date)
+    if (!nextChange || this.isAlwaysClosed()) return maxTime
+
+    const nextChangeDate = nextChange.date
+    const now = date
+    const timeUntilNextChange = nextChangeDate.getTime() - now.getTime()
+
+    return Math.floor(timeUntilNextChange / (60 * 1000))
   }
 
   /**
    * Retrieves the next change in the opening hours (either opening or closing).
    *
    * @param {Date} [date=new Date()] - The reference date and time to check from.
-   * @param {string} [timezone=this.userTimezone] - The timezone of the reference date (default is user's timezone).
    * @returns {NextChange | null} - The next change in opening hours or null if none exists.
    */
-  public getNextChange(date: Date = new Date(), timezone: string = this.userTimezone): NextChange | null {
-    
-    let currentUserTimeZone = this.userTimezone
-
-    // Step 1: Convert the current data to the requested timezone
-    this.setUserTimezone(timezone)
-
-    // Step 2: Use the opening_hours instance to get the next change
+  getNextChange (date: Date = new Date()): NextChange | null {
+    // Step 1: Use the opening_hours instance to get the next change
     const nextChangeRaw = this.openingHoursInstance.getNextChange(date)
-    const nextChangeDate = new Date(nextChangeRaw)
-    const dateState = this.openingHoursInstance.getState(date)
 
-    console.log('dateInUTC', date.toString())
-    console.log('nextChangeRaw', nextChangeRaw)
-    console.log('nextChangeDate', nextChangeDate.toString())
-
-    // Step 3: If there's no next change, return null
+    // Step 2: If there's no next change, return null
     if (!nextChangeRaw) {
       return null
     }
-    
-    // Step 4: Set the user timezone back to the original
-    this.setUserTimezone(currentUserTimeZone)
 
-    // Step 5: Return the formatted NextChange object
+    const nextChangeDate = new Date(nextChangeRaw)
+    const dateState = this.openingHoursInstance.getState(date)
+
+    // Step 4: Return the formatted NextChange object
     return {
       date: nextChangeDate,
       state: dateState ? 'close' : 'open'
     }
+  }
+
+  /**
+   * Returns the next opening time from the current time.
+   *
+   * @returns {Date | null} - The next opening time, or null if no upcoming openings.
+   */
+  getNextOpeningTime (): Date | null {
+    let nextChange = this.getNextChange()
+    while (nextChange && nextChange.state === 'close') {
+      nextChange = this.getNextChange(nextChange.date)
+    }
+    return nextChange ? nextChange.date : null
+  }
+
+  /**
+   * Returns the next closing time from the current time.
+   *
+   * @returns {Date | null} - The next closing time, or null if no upcoming closings.
+   */
+  getNextClosingTime (): Date | null {
+    let nextChange = this.getNextChange()
+    while (nextChange && nextChange.state === 'open') {
+      nextChange = this.getNextChange(nextChange.date)
+    }
+    return nextChange ? nextChange.date : null
   }
 
   /**
@@ -193,7 +315,7 @@ export class OpeningHoursService {
    * @param {string} dayOfWeek - The day of the week (e.g., "Monday").
    * @param {string} opens - Opening time in HH:mm format.
    * @param {string} closes - Closing time in HH:mm format.
-   * @param {string} [timezone=this.userTimezone] - The timezone of the input data.
+   * @param {string} [timezone=this.userTimezone] - The timezone of the input data (default is the user's timezone).
    */
   addOpeningHour (
     dayOfWeek: string,
@@ -201,32 +323,17 @@ export class OpeningHoursService {
     closes: string,
     timezone: string = this.userTimezone
   ) {
-    const newSpec: OpeningHoursSpecification = {
-      '@type': 'OpeningHoursSpecification',
-      dayOfWeek,
-      opens,
-      closes
-    }
-
-    // Normalize and check if closes is before opens, throwing an error if invalid
-    const preprocessedEntry = this.preprocessOpeningHours([newSpec])
-
-    // Convert and split entry
-    const convertedEntries = preprocessedEntry.flatMap(spec => {
-      return this.convertAndSplitEntry(spec, timezone, this.userTimezone)
-    })
-
-    // Combine new hours with existing ones and check integrity
-    const combinedHours = this.combineAndCheckIntegrity([
-      ...this.openingHours,
-      ...convertedEntries
-    ])
-
-    // Update internal data
-    this.openingHours = combinedHours
-
-    // Regenerate the opening_hours instance
-    this.generateOpeningHoursInstance()
+    return this.addOpeningHoursBatch(
+      [
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek,
+          opens,
+          closes
+        }
+      ],
+      timezone
+    )
   }
 
   /**
@@ -235,7 +342,7 @@ export class OpeningHoursService {
    * Handles splitting if the entries span across days due to timezone conversion.
    *
    * @param {OpeningHoursSpecification[]} openingHours // The opening hours to add
-   * @param {string} [timezone=this.userTimezone] // The timezone of the input data
+   * @param {string} [timezone=this.userTimezone] // The timezone of the input data (default is the user's timezone).
    */
   addOpeningHoursBatch (
     openingHours: OpeningHoursSpecification[],
@@ -266,22 +373,27 @@ export class OpeningHoursService {
    * Removes all opening hours for a specific day of the week, considering the timezone.
    *
    * @param {string} dayOfWeek - The day of the week to remove (e.g., "Monday").
-   * @param {string} [timezone=this.userTimezone] - The timezone in which to interpret the day of the week.
+   * @param {string} [timezone=this.userTimezone] - The timezone in which to interpret the day of the week (default is the user's timezone).
    */
   removeOpeningHoursForDay (
     dayOfWeek: string,
     timezone: string = this.userTimezone
   ) {
-    // Step 1: Convert times to the requested timezone, adjusting days if necessary
-    const convertedHours = this.openingHours.flatMap(spec => {
-      return this.convertAndSplitEntry(spec, this.userTimezone, timezone)
-    })
+    let openingHours = [...this.openingHours]
 
-    // Step 2: Combine adjacent times on the same day
-    const combinedCurrentHours = this.combineAndCheckIntegrity(convertedHours)
+    // Convert the day of the week to the user's timezone if necessary
+    if (timezone !== this.userTimezone) {
+      // Step 1: Convert times to the requested timezone, adjusting days if necessary
+      const convertedHours = this.openingHours.flatMap(spec => {
+        return this.convertAndSplitEntry(spec, this.userTimezone, timezone)
+      })
+
+      // Step 2: Combine adjacent times on the same day
+      openingHours = this.combineAndCheckIntegrity(convertedHours)
+    }
 
     // Remove entries for the specified day
-    const updatedHours = combinedCurrentHours.filter(
+    const updatedHours = openingHours.filter(
       spec => spec.dayOfWeek !== dayOfWeek
     )
 
@@ -293,57 +405,37 @@ export class OpeningHoursService {
   }
 
   /**
-   * Set the user's timezone and converts all stored opening hours to the new timezone.
-   * Handles splitting if the conversion causes day changes.
-   *
-   * @param {string} timezone - The new timezone to switch to.
-   */
-  setUserTimezone (timezone: string) {
-    // Re-convert all stored opening hours to the new timezone
-    const convertedHours = this.openingHours.flatMap(spec => {
-      return this.convertAndSplitEntry(spec, this.userTimezone, timezone)
-    })
-
-    // update the user timezone
-    this.userTimezone = timezone
-
-    // Combine and update internal data
-    const combinedHours = this.combineAndCheckIntegrity(convertedHours)
-    this.openingHours = combinedHours
-
-    // Regenerate the opening_hours instance
-    this.generateOpeningHoursInstance()
-  }
-
-  /**
-   * Returns the user's timezone.
-   *
-   * @returns {string} - The user's timezone.
-   */
-  getUsertimezone () {
-    return this.userTimezone
-  }
-
-  /**
    * Returns an array with openRange for each day of the week, including the opening and closing times, with optional timezone conversion.
-   * Combines adjacent time ranges and checks for integrity in the specified timezone.
    *
-   * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange.
+   * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange because the days of the week are in the user's timezone (default is the user's timezone).
    * @returns {OpenRangePerDay[]} - Array of objects where each object contains the day of the week and its openRange.
    */
   getOpenRangePerDay (timezone: string = this.userTimezone): OpenRangePerDay[] {
-    // Convert opening hours to the requested timezone and handle day changes
-    const convertedOpeningHours = this.openingHours.flatMap(spec => {
-      return this.convertAndSplitEntry(spec, this.userTimezone, timezone)
-    })
+    let openingHours = [...this.openingHours]
 
-    // Combine adjacent times on the same day
-    const combinedHours = this.combineAndCheckIntegrity(convertedOpeningHours)
+    // Convert the day of the week to the user's timezone if necessary
+    if (timezone !== this.userTimezone) {
+      // Step 1: Convert times to the requested timezone, adjusting days if necessary
+      const convertedHours = this.openingHours.flatMap(spec => {
+        return this.convertAndSplitEntry(spec, this.userTimezone, timezone)
+      })
+
+      // Step 2: Combine adjacent times on the same day
+      openingHours = this.combineAndCheckIntegrity(convertedHours)
+    }
 
     // Group opening hours by day of the week
-    const OpenRangePerDay: { [key: string]: OpenRange[] } = {}
+    const OpenRangePerDay: { [key: string]: OpenRange[] } = {
+      Monday: [],
+      Tuesday: [],
+      Wednesday: [],
+      Thursday: [],
+      Friday: [],
+      Saturday: [],
+      Sunday: []
+    }
 
-    combinedHours.forEach(spec => {
+    openingHours.forEach(spec => {
       if (!OpenRangePerDay[spec.dayOfWeek]) {
         OpenRangePerDay[spec.dayOfWeek] = []
       }
@@ -364,48 +456,24 @@ export class OpeningHoursService {
   }
 
   /**
-   * Returns the openRange for a single day, with optional timezone conversion.
-   * Combines adjacent time ranges and checks for integrity in the specified timezone.
+   * Returns the openRange for a single day, including the opening and closing times, with optional timezone conversion.
    *
    * @param {string} dayOfWeek - The day of the week to retrieve the openRange for (e.g., "Monday").
-   * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange.
+   * @param {string} [timezone=this.userTimezone] - The timezone to use for the openRange because the days of the week are in the user's timezone (default is the user's timezone).
    * @returns {OpenRangePerDay} - Object containing the day of the week and its openRange.
    */
-  getShiftsForDay (
+  getOpenRangeForDay (
     dayOfWeek: string,
     timezone: string = this.userTimezone
   ): OpenRangePerDay {
-    // Convert opening hours to the requested timezone and handle day changes
-    const convertedOpeningHours = this.openingHours.flatMap(spec => {
-      return this.convertAndSplitEntry(spec, this.userTimezone, timezone)
-    })
-
-    // Adjust the dayOfWeek to the requested timezone
-    const adjustedDayOfWeek = this.adjustDayForTimezone(
-      dayOfWeek,
-      this.userTimezone,
-      timezone
+    const openRange = this.getOpenRangePerDay(timezone)
+    return (
+      openRange.find(openRange => openRange.dayOfWeek === dayOfWeek) || {
+        '@type': 'OpenRangePerDay',
+        dayOfWeek,
+        openRange: []
+      }
     )
-
-    // Filter for the specific day
-    const openingHoursForDay = convertedOpeningHours.filter(
-      spec => spec.dayOfWeek === adjustedDayOfWeek
-    )
-
-    // Combine and check integrity for the specified day
-    const combinedHours = this.combineAndCheckIntegrity(openingHoursForDay)
-
-    // Convert the result to OpenRange[]
-    const openRange = combinedHours.map(spec => ({
-      open: spec.opens,
-      closes: spec.closes
-    }))
-
-    return {
-      '@type': 'OpenRangePerDay',
-      dayOfWeek: adjustedDayOfWeek,
-      openRange
-    }
   }
 
   /**
@@ -438,59 +506,6 @@ export class OpeningHoursService {
       const closesMinutes = this.convertTimeToMinutes(spec.closes)
       return total + (closesMinutes - opensMinutes) / 60 // Convert minutes to hours
     }, 0)
-  }
-
-  /**
-   * Returns the next opening time from the current time.
-   *
-   * @returns {Date | null} - The next opening time, or null if no upcoming openings.
-   */
-  getNextOpeningTime (): Date | null {
-    const now = this.getCurrentTimeInTimezone(this.userTimezone)
-
-    let nextOpeningTime = null
-    for (const spec of this.openingHours) {
-      let openTime = this.convertToZonedDate(spec.opens, spec.dayOfWeek)
-      if (openTime > now) {
-        if (nextOpeningTime === null || openTime < nextOpeningTime) {
-          nextOpeningTime = openTime
-        }
-      }
-    }
-    return nextOpeningTime
-  }
-
-  /**
-   * Returns the next closing time from the current time.
-   *
-   * @returns {Date | null} - The next closing time, or null if no upcoming closings.
-   */
-  getNextClosingTime (): Date | null {
-    const now = this.getCurrentTimeInTimezone(this.userTimezone)
-
-    let nextClosingTime = null
-    for (const spec of this.openingHours) {
-      let closeTime = this.convertToZonedDate(spec.closes, spec.dayOfWeek)
-      if (closeTime > now) {
-        if (nextClosingTime === null || closeTime < nextClosingTime) {
-          nextClosingTime = closeTime
-        }
-      }
-    }
-    return nextClosingTime
-  }
-
-  /**
-   * Checks if the business will remain open for the specified duration from the current time.
-   *
-   * @param {number} durationInMinutes - The duration to check in minutes.
-   * @returns {boolean} - True if the business will remain open for the specified duration, false otherwise.
-   */
-  isOpenForDuration (durationInMinutes: number): boolean {
-    const now = this.getCurrentTimeInTimezone(this.userTimezone)
-    const futureTime = new Date(now.getTime() + durationInMinutes * 60 * 1000)
-
-    return this.isOpenAt(futureTime)
   }
 
   /**
@@ -572,21 +587,17 @@ export class OpeningHoursService {
     )
 
     // Adjust days based on day changes
-    const opensDayOfWeek = this.adjustDayOfWeek(
+    let opensDayOfWeek = this.adjustDayOfWeek(
       spec.dayOfWeek,
       opensConversion.changedDay
     )
-    const closesDayOfWeek = this.adjustDayOfWeek(
+    let closesDayOfWeek = this.adjustDayOfWeek(
       spec.dayOfWeek,
       closesConversion.changedDay
     )
 
     // If days are the same, return a single entry
     if (opensDayOfWeek === closesDayOfWeek) {
-      const closes = closesConversion.time.split(':')
-      if (closes[0] !== '23' && closes[1] === '59') {
-        closesConversion.time = +closes[0] + 1 + ':00'
-      }
       return [
         {
           '@type': 'OpeningHoursSpecification',
@@ -601,7 +612,7 @@ export class OpeningHoursService {
         '@type': 'OpeningHoursSpecification',
         dayOfWeek: opensDayOfWeek,
         opens: opensConversion.time,
-        closes: '23:59'
+        closes: '24:00' // End of the day
       }
       const secondEntry: OpeningHoursSpecification = {
         '@type': 'OpeningHoursSpecification',
@@ -611,42 +622,21 @@ export class OpeningHoursService {
       }
 
       if (
-        opensConversion.time !== '23:59' &&
+        opensConversion.time !== '24:00' &&
         closesConversion.time !== '00:00'
       ) {
         return [firstEntry, secondEntry]
-      } else if (opensConversion.time === '23:59') {
+      } else if (
+        opensConversion.time === '24:00' &&
+        closesConversion.time === '00:00'
+      ) {
+        return []
+      } else if (opensConversion.time === '24:00') {
         return [secondEntry]
       } else {
         return [firstEntry]
       }
     }
-  }
-
-  /**
-   * Adjusts the day of the week for a given timezone conversion.
-   *
-   * @param {string} dayOfWeek - The original day of the week.
-   * @param {string} fromTimezone - The original timezone.
-   * @param {string} toTimezone - The target timezone.
-   * @returns {string} - The adjusted day of the week.
-   */
-  private adjustDayForTimezone (
-    dayOfWeek: string,
-    fromTimezone: string,
-    toTimezone: string
-  ): string {
-    const date = new Date()
-    const dayIndex = this.convertDayStringToNumber(dayOfWeek) - 1 // 0-based index
-    date.setUTCDate(date.getUTCDate() - date.getUTCDay() + dayIndex)
-
-    const localDate = fromZonedTime(date, fromTimezone)
-    const targetDate = toZonedTime(localDate, toTimezone)
-
-    const adjustedDayIndex = targetDate.getDay() // 0 (Sunday) to 6 (Saturday)
-    const adjustedDayOfWeek = this.convertNumberToDayString(adjustedDayIndex)
-
-    return adjustedDayOfWeek
   }
 
   /**
@@ -669,15 +659,21 @@ export class OpeningHoursService {
     // Create a date object in the fromTimezone
     const dateInFromZone = new Date()
     const dayIndex = this.convertDayStringToNumber(dayOfWeek) - 1 // 0-based index
+
     dateInFromZone.setUTCDate(
       dateInFromZone.getUTCDate() - dateInFromZone.getUTCDay() + dayIndex
     )
-    dateInFromZone.setHours(hours, minutes, 0, 0)
+    dateInFromZone.setHours(hours % 24, minutes, 0, 0)
 
     const localDate = fromZonedTime(dateInFromZone, fromTimezone)
     const dateInToZone = toZonedTime(localDate, toTimezone)
     const convertedTime = format(dateInToZone, 'HH:mm')
-    const dayDifference = dateInToZone.getDate() - dateInFromZone.getDate() // -1, 0, or +1
+    let dayDifference = dateInToZone.getDate() - dateInFromZone.getDate() // -1, 0, or +1
+
+    // If closing time was 24:00, ensure no day change
+    if (time === '24:00') {
+      dayDifference += 1
+    }
 
     return { time: convertedTime, changedDay: dayDifference }
   }
@@ -737,27 +733,26 @@ export class OpeningHoursService {
     const combinedHours: OpeningHoursSpecification[] = []
 
     for (let i = 0; i < hours.length; i++) {
-      let current = hours[i]
-      let next = hours[i + 1]
+      let currentRange = { ...hours[i] }
+      let nextRange = hours[i + 1]
 
       while (
-        next &&
-        current.dayOfWeek === next.dayOfWeek && // Same day
-        (this.areTimesAdjacent(current.closes, next.opens) ||
-          current.closes === next.opens)
+        nextRange &&
+        currentRange.dayOfWeek === nextRange.dayOfWeek && // Same day
+        this.areTimesAdjacent(currentRange.closes, nextRange.opens) // Adjacent times
       ) {
-        // Merge current and next range into one by extending the closing time of the current range
-        current = {
-          ...current,
-          closes: next.closes
+        let updatedClosingTime = nextRange.closes
+        // Ensure the closing time is the latest
+        if (this.timeIsBefore(updatedClosingTime, currentRange.closes)) {
+          updatedClosingTime = currentRange.closes
         }
-        i++ // Skip the next entry as it's now merged
-        next = hours[i + 1]
+        // Update the current range's closing time
+        currentRange.closes = updatedClosingTime
+        i++ // Move to the next range as it's now merged
+        nextRange = hours[i + 1]
       }
-
-      combinedHours.push(current)
+      combinedHours.push(currentRange)
     }
-
     return combinedHours
   }
 
@@ -772,9 +767,21 @@ export class OpeningHoursService {
       const opensTime = this.convertTimeToMinutes(current.opens)
       const closesTime = this.convertTimeToMinutes(current.closes)
 
+      if (current.opens === '24:00') {
+        throw new Error(
+          `Invalid opening time on ${current.dayOfWeek}: opens at 24:00`
+        )
+      }
+
       if (closesTime <= opensTime) {
         throw new Error(
           `Invalid time range on ${current.dayOfWeek}: opens at ${current.opens} but closes at ${current.closes}`
+        )
+      }
+
+      if (closesTime > 1440) {
+        throw new Error(
+          `Invalid closing time on ${current.dayOfWeek}: closes at ${current.closes}`
         )
       }
 
@@ -792,39 +799,6 @@ export class OpeningHoursService {
   }
 
   /**
-   * Converts a given time (in "HH:mm" format) to the zoned date with the specified time,
-   * adjusted for the given timezone.
-   *
-   * @param {string} time - Time in HH:mm format (e.g., "14:30").
-   * @param {string} dayOfWeek - The day of the week for the time (e.g., "Monday").
-   * @returns {Date} - The date object with the specified time and day, adjusted for the timezone.
-   */
-  private convertToZonedDate (time: string, dayOfWeek: string): Date {
-    const [hours, minutes] = time.split(':').map(Number)
-
-    // Get the current date
-    const now = new Date()
-    const zonedTime = toZonedTime(now, this.userTimezone)
-
-    // Set the future occurrence of the day of the week
-    const dayIndex = this.convertDayStringToNumber(dayOfWeek)
-    const currentDay = zonedTime.getDay()
-
-    if (currentDay > dayIndex) {
-      zonedTime.setDate(zonedTime.getDate() + 7 - currentDay + dayIndex)
-    } else if (currentDay < dayIndex) {
-      zonedTime.setDate(zonedTime.getDate() + dayIndex - currentDay)
-    } else {
-      zonedTime.setDate(zonedTime.getDate() + 7)
-    }
-
-    // Set the time to the provided HH:mm
-    zonedTime.setHours(hours, minutes, 0, 0)
-
-    return zonedTime
-  }
-
-  /**
    * Converts a time string (HH:mm) to the number of minutes since the start of the day.
    *
    * @param {string} time - Time in HH:mm format.
@@ -832,6 +806,9 @@ export class OpeningHoursService {
    */
   private convertTimeToMinutes (time: string): number {
     const [hours, minutes] = time.split(':').map(Number)
+    if (hours === 24 && minutes === 0) {
+      return 1440 // Represents 24:00 as the end of the day
+    }
     return hours * 60 + minutes
   }
 
@@ -928,20 +905,28 @@ export class OpeningHoursService {
    * This method is used internally to update the opening_hours instance whenever the opening hours are modified.
    */
   private generateOpeningHoursInstance () {
-    const hoursString = this.openingHours
+    const hoursString = this.getOpenRangePerDay()
       .map(
         spec =>
-          `${this.convertDayOfWeekToShortForm(spec.dayOfWeek)} ${spec.opens}-${
-            spec.closes
+          `${this.convertDayOfWeekToShortForm(spec.dayOfWeek)} ${
+            spec.openRange.length === 0
+              ? 'off'
+              : spec.openRange
+                  .map(range => `${range.open}-${range.closes}`)
+                  .join(',')
           }`
       )
       .join('; ')
 
     if (hoursString === '') {
-      this.openingHoursInstance = new opening_hours('Mo-Su closed')
+      this.openingHoursInstance = new opening_hours(
+        'Mo-Su closed'
+      ) as OpeningHoursInstance
     } else {
       // Recreate the opening_hours instance with the updated string
-      this.openingHoursInstance = new opening_hours(hoursString)
+      this.openingHoursInstance = new opening_hours(
+        hoursString
+      ) as OpeningHoursInstance
     }
   }
 
@@ -962,39 +947,6 @@ export class OpeningHoursService {
       Sunday: 'Su'
     }
     return dayMap[day]
-  }
-
-  /**
-   * Converts a date object to the specified timezone.
-   *
-   * @param {Date} date - The date object to convert.
-   * @param {string} timezone - The timezone to convert to.
-   * @returns {Date} - The converted date.
-   */
-  private convertDateToTimezone (date: Date, timezone: string): Date {
-    return toZonedTime(date, timezone)
-  }
-
-  /**
-   * Converts a date object from the specified timezone to the local timezone.
-   *
-   * @param {Date} date - The date object to convert.
-   * @param {string} timezone - The timezone of the input date.
-   * @returns {Date} - The converted date.
-   */
-  private convertDateFromTimezone (date: Date, timezone: string): Date {
-    return fromZonedTime(date, timezone)
-  }
-
-  /**
-   * Gets the current time in the specified timezone.
-   *
-   * @param {string} timezone - The timezone for the current time.
-   * @returns {Date} - The current time in the specified timezone.
-   */
-  private getCurrentTimeInTimezone (timezone: string): Date {
-    const now = new Date()
-    return this.convertDateToTimezone(now, timezone)
   }
 
   /**
