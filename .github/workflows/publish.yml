@@ -35,16 +35,3 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
-
-      - name: Set up Node.js for GitHub Packages
-        uses: actions/setup-node@v4
-        with:
-          node-version: 'lts/*'
-          registry-url: 'https://npm.pkg.github.com/'
-
-      - name: Authenticate to GitHub Packages
-        run: |
-          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > ~/.npmrc
-
-      - name: Publish to GitHub Packages
-        run: npm publish
