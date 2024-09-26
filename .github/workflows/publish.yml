@@ -17,7 +17,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20.17.0'
-          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install Dependencies
         run: npm install
@@ -37,7 +37,7 @@ jobs:
         run: npm publish --access public
 
       - name: Set up Node.js for GitHub Packages
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 'lts/*'
           registry-url: 'https://npm.pkg.github.com/'
