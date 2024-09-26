@@ -1,9 +1,8 @@
-name: Publish to npm
+name: Publish to npm and GitHub Packages
 
 on:
   push:
     branches:
-      - main
       - release/*
 
 jobs:
@@ -17,11 +16,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
-          registry-url: 'https://registry.npmjs.org/'
+          node-version: 'lts/*'
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm install
+
+      - name: Run Tests
+        run: npm test
+
+      - name: Run npm Audit
+        run: npm audit --audit-level=moderate
 
       - name: Build Package
         run: npm run build
@@ -31,3 +36,16 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           npm publish --access public
+
+      - name: Set up Node.js for GitHub Packages
+        uses: actions/setup-node@v3
+        with:
+          node-version: 'lts/*'
+          registry-url: 'https://npm.pkg.github.com/'
+
+      - name: Authenticate to GitHub Packages
+        run: |
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > ~/.npmrc
+
+      - name: Publish to GitHub Packages
+        run: npm publish
