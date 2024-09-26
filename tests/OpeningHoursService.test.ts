@@ -20,6 +20,56 @@ describe('OpeningHoursService', () => {
       const exportedHours = service.exportOpeningHours()
       expect(exportedHours).toEqual([]) // No opening hours should be present
     })
+
+    it('should initialize with multiple opening hours', () => {
+      const openingHours: OpeningHoursSpecification[] = [
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Monday',
+          opens: '09:00',
+          closes: '18:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Tuesday',
+          opens: '10:00',
+          closes: '15:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Wednesday',
+          opens: '11:00',
+          closes: '17:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Thursday',
+          opens: '12:00',
+          closes: '16:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Friday',
+          opens: '13:00',
+          closes: '19:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Saturday',
+          opens: '14:00',
+          closes: '20:00'
+        },
+        {
+          '@type': 'OpeningHoursSpecification',
+          dayOfWeek: 'Sunday',
+          opens: '15:00',
+          closes: '21:00'
+        }
+      ]
+      service.setOpeningHours(openingHours)
+      const exportedHours = service.exportOpeningHours()
+      expect(exportedHours).toEqual(openingHours)
+    })
   })
 
   /** Adding and Removing Opening Hours **/

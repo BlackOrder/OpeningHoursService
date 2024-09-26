@@ -1,4 +1,9 @@
 import opening_hours from 'opening_hours'
+import {
+  argument_hash,
+  opening_hours_iterator
+} from 'opening_hours'
+
 import { fromZonedTime, toZonedTime, format } from 'date-fns-tz'
 /**
  * Type definition for OpeningHoursSpecification.
@@ -39,9 +44,28 @@ export interface NextChange {
 }
 
 export interface OpeningHoursInstance {
-  getState(date: Date): boolean
-  getNextChange(date: Date): Date | undefined
-  // Add other methods as needed
+  getState(date?: Date): boolean
+  getUnknown(date?: Date): boolean
+  getStateString(
+    date?: Date,
+    past?: boolean
+  ): 'open' | 'unknown' | 'closed' | 'close'
+  getComment(date?: Date): string | undefined
+  getNextChange(date?: Date, maxdate?: Date): Date | undefined
+  getMatchingRule(date?: Date): number | undefined
+  getOpenDuration(from: Date, to: Date): [number, number]
+  getOpenIntervals(
+    from: Date,
+    to: Date
+  ): [Date, Date, boolean, string | undefined][]
+  getStatePair(
+    date?: Date
+  ): [boolean, Date, boolean, string | undefined, number | undefined]
+  getWarnings(): string[]
+  isEqualTo(second_oh_object: opening_hours, start_date?: Date): boolean
+  isWeekStable(): boolean
+  prettifyValue(argument_hash?: argument_hash): string
+  getIterator(date?: Date): opening_hours_iterator
 }
 
 /**
@@ -180,6 +204,11 @@ export class OpeningHoursService {
     return !this.isOpenAt(date)
   }
 
+  /**
+   * Generates a new opening_hours instance based on the current opening hours data.
+   *
+   * @returns {OpeningHoursInstance} - The opening_hours instance.
+   */
   getOpeningHoursInstance (): OpeningHoursInstance {
     return this.openingHoursInstance
   }
